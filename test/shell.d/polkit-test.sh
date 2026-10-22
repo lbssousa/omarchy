@@ -123,6 +123,15 @@ assert(
   polkit.securityKeyMode({ dialogVisible: true, securityKeyConfigured: true, fingerprintConfigured: true, laptopClosed: true }),
   'polkit shows the security key when the lid gate skips pam_fprintd'
 )
+const french = { dialogVisible: true, securityKeyConfigured: true, securityKeyFirst: true, fingerprintConfigured: true, supplementary: "Placez votre doigt sur le lecteur d'empreintes digitales" }
+assert(
+  polkit.fingerprintMode(french) && !polkit.securityKeyMode(french),
+  'polkit shows the fingerprint when pam_fprintd speaks after pam_u2f, in any language'
+)
+assert(
+  polkit.securityKeyMode({ dialogVisible: true, securityKeyConfigured: true, supplementary: 'Tap the token' }),
+  'polkit shows the security key for a custom cue when there is no reader'
+)
 // What PolkitAgent.qml's syncFromFlow() does with `submitted` when PAM's flow changes.
 const sync = (s, flow) => {
   const next = { ...s, ...flow }

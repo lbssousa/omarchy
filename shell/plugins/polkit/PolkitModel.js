@@ -63,8 +63,11 @@ function waitingOnHardware(s) {
 function securityKeyMode(s) {
   if (!waitingOnHardware(s)) return false
   if (messageLooksSecurityKey(s.supplementary)) return true
-  return !!s.securityKeyConfigured && !promptLooksFingerprint(s.supplementary)
-    && (!!s.securityKeyFirst || !s.fingerprintConfigured || !!s.laptopClosed)
+  if (!s.securityKeyConfigured || promptLooksFingerprint(s.supplementary)) return false
+  // pam_u2f's cue is never translated but pam_fprintd's messages are, so any
+  // other message while the reader is reachable is the reader's.
+  if (s.fingerprintConfigured && !s.laptopClosed) return !!s.securityKeyFirst && !s.supplementary
+  return true
 }
 
 // Whether an answer is still being checked after PAM's flow changed. `s`
