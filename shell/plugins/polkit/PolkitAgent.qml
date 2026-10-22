@@ -39,6 +39,8 @@ Item {
   property bool securityKeyConfigured: false
   // pam_u2f comes before pam_fprintd, so it is the module PAM waits on first.
   property bool securityKeyFirst: false
+  // pam_u2f's cue_prompt= values, so a custom cue still shows the key.
+  property var securityKeyCues: []
   // Lid shut right now — the reader is physically unreachable, so we fall back
   // to the password even when a sensor is enrolled. Refreshed per request.
   property bool laptopClosed: false
@@ -62,6 +64,7 @@ Item {
     supplementary: currentSupplementary,
     securityKeyConfigured: securityKeyConfigured,
     securityKeyFirst: securityKeyFirst,
+    securityKeyCues: securityKeyCues,
     fingerprintConfigured: fingerprintConfigured,
     laptopClosed: laptopClosed
   })
@@ -81,6 +84,7 @@ Item {
     fingerprintConfigured = PolkitModel.fingerprintConfiguredFromPamConfig(raw)
     securityKeyConfigured = PolkitModel.securityKeyConfiguredFromPamConfig(raw)
     securityKeyFirst = PolkitModel.passiveAuthModules(raw)[0] === "security-key"
+    securityKeyCues = PolkitModel.securityKeyCuesFromPamConfig(raw)
   }
 
   function refreshLidState() {
@@ -116,6 +120,7 @@ Item {
       submitted: submitted,
       responseRequired: responseRequired,
       supplementary: supplementary,
+      securityKeyCues: securityKeyCues,
       messageChanged: messageChanged
     })
   }
@@ -198,6 +203,7 @@ Item {
       root.fingerprintConfigured = false
       root.securityKeyConfigured = false
       root.securityKeyFirst = false
+      root.securityKeyCues = []
     }
     onFileChanged: reload()
   }

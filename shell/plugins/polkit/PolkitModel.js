@@ -17,9 +17,15 @@ function fingerprintConfiguredFromPamConfig(raw) {
   return false
 }
 
-function messageLooksSecurityKey(text) {
+function messageLooksSecurityKey(text, cues) {
   // pam_u2f's default cue is "Please touch the device."; cue_prompt= can
-  // change it, so also accept the usual words for a FIDO key.
+  // change it. A configured cue is matched exactly, before the usual words
+  // for a FIDO key.
+  var trimmed = String(text || "").replace(/^\s+|\s+$/g, "").toLowerCase()
+  var configured = cues || []
+  for (var i = 0; trimmed && i < configured.length; i++) {
+    if (String(configured[i]).replace(/^\s+|\s+$/g, "").toLowerCase() === trimmed) return true
+  }
   if (promptLooksFingerprint(text)) return false
   var s = String(text || "").toLowerCase()
   return s.indexOf("touch") !== -1 || s.indexOf("security key") !== -1
@@ -46,12 +52,33 @@ function securityKeyConfiguredFromPamConfig(raw) {
   return passiveAuthModules(raw).indexOf("security-key") !== -1
 }
 
+function securityKeyCuesFromPamConfig(raw) {
+  // The cue_prompt= values of pam_u2f, either bare (cue_prompt=Tap) or, when
+  // they hold spaces, in pam.d's brackets ([cue_prompt=Tap the token], where
+  // \] is a literal bracket).
+  var out = []
+  var lines = String(raw || "").split("\n")
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i].replace(/^\s+|\s+$/g, "")
+    if (!line || line.charAt(0) === "#") continue
+    if (!line.match(/^auth\s+/) || line.indexOf("pam_u2f.so") === -1) continue
+    var re = /\[cue_prompt=((?:\\.|[^\]\\])*)\]|(?:^|\s)cue_prompt=(\S+)/g
+    var match
+    while ((match = re.exec(line)) !== null) {
+      var cue = match[1] !== undefined ? match[1].replace(/\\\]/g, "]") : match[2]
+      if (cue && out.indexOf(cue) === -1) out.push(cue)
+    }
+  }
+  return out
+}
+
 // Which method owns the dialog while PAM waits on hardware. These live here
 // rather than in QML bindings so polkit-test.sh can check the property that matters:
 // a password prompt from PAM (`responseRequired`) is never hidden. `s` holds
 // the dialog's state: dialogVisible, responseRequired, submitted, errorFlash,
 // supplementary (PAM's info message), securityKeyConfigured, securityKeyFirst,
-// fingerprintConfigured and laptopClosed.
+// securityKeyCues (pam_u2f's cue_prompt values), fingerprintConfigured and
+// laptopClosed.
 function waitingOnHardware(s) {
   return !!s.dialogVisible && !s.responseRequired && !s.submitted && !s.errorFlash
 }
@@ -62,7 +89,7 @@ function waitingOnHardware(s) {
 // reader out of the way).
 function securityKeyMode(s) {
   if (!waitingOnHardware(s)) return false
-  if (messageLooksSecurityKey(s.supplementary)) return true
+  if (messageLooksSecurityKey(s.supplementary, s.securityKeyCues)) return true
   if (!s.securityKeyConfigured || promptLooksFingerprint(s.supplementary)) return false
   // pam_u2f's cue is never translated but pam_fprintd's messages are, so any
   // other message while the reader is reachable is the reader's.
@@ -71,13 +98,13 @@ function securityKeyMode(s) {
 }
 
 // Whether an answer is still being checked after PAM's flow changed. `s`
-// holds submitted, responseRequired, supplementary and messageChanged (PAM
-// sent a new info message). PAM asking again ends the check; so does a new
+// holds submitted, responseRequired, supplementary, securityKeyCues and
+// messageChanged (PAM sent a new info message). PAM asking again ends the check; so does a new
 // touch cue, since PAM then took the answer (pam_u2f's PIN with
 // `pinverification`) and waits on the key instead.
 function stillSubmitted(s) {
   if (!s.submitted || s.responseRequired) return false
-  return !(s.messageChanged && messageLooksSecurityKey(s.supplementary))
+  return !(s.messageChanged && messageLooksSecurityKey(s.supplementary, s.securityKeyCues))
 }
 
 // Fingerprint owns the dialog while PAM waits on the reader (lid open, sensor
@@ -112,6 +139,7 @@ if (typeof module !== "undefined") {
     fingerprintMode: fingerprintMode,
     passiveAuthModules: passiveAuthModules,
     securityKeyConfiguredFromPamConfig: securityKeyConfiguredFromPamConfig,
+    securityKeyCuesFromPamConfig: securityKeyCuesFromPamConfig,
     passwordPlaceholder: passwordPlaceholder,
     authorizationLabel: authorizationLabel
   }

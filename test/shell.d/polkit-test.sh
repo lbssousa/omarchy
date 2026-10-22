@@ -66,6 +66,21 @@ assert(
   !polkit.securityKeyConfiguredFromPamConfig('# auth sufficient pam_u2f.so\nauth required pam_unix.so'),
   'polkit ignores a commented-out pam_u2f'
 )
+assertEqual(
+  JSON.stringify(polkit.securityKeyCuesFromPamConfig(`
+auth sufficient pam_u2f.so cue [cue_prompt=Tap the [token\\]] authfile=/etc/fido2/fido2
+auth sufficient pam_u2f.so cue cue_prompt=Tap!
+# auth sufficient pam_u2f.so cue cue_prompt=Ignored
+auth required pam_unix.so
+`)),
+  JSON.stringify(['Tap the [token]', 'Tap!']),
+  "polkit reads pam_u2f's cue_prompt, bare or in brackets"
+)
+assertEqual(
+  JSON.stringify(polkit.securityKeyCuesFromPamConfig('auth sufficient pam_u2f.so cue authfile=/etc/fido2/fido2')),
+  JSON.stringify([]),
+  'polkit reads no cue_prompt when pam_u2f uses its default cue'
+)
 
 assert(polkit.messageLooksSecurityKey('Please touch the device.'), 'polkit detects the pam_u2f cue')
 assert(polkit.messageLooksSecurityKey('Please touch the FIDO authenticator.'), 'polkit detects the newer pam_u2f cue')
@@ -132,6 +147,15 @@ assert(
   polkit.securityKeyMode({ dialogVisible: true, securityKeyConfigured: true, supplementary: 'Tap the token' }),
   'polkit shows the security key for a custom cue when there is no reader'
 )
+const customCue = { dialogVisible: true, securityKeyConfigured: true, securityKeyFirst: true, fingerprintConfigured: true, securityKeyCues: ['Tap the token'], supplementary: 'Tap the token' }
+assert(
+  polkit.securityKeyMode(customCue) && !polkit.fingerprintMode(customCue),
+  'polkit shows the security key for its configured cue_prompt while the reader is reachable'
+)
+assert(
+  polkit.fingerprintMode({ ...french, securityKeyCues: ['Tap the token'] }),
+  'polkit still shows the fingerprint for other messages when a cue_prompt is configured'
+)
 // What PolkitAgent.qml's syncFromFlow() does with `submitted` when PAM's flow changes.
 const sync = (s, flow) => {
   const next = { ...s, ...flow }
@@ -157,4 +181,9 @@ assert(
   polkit.stillSubmitted({ submitted: true, messageChanged: true, supplementary: 'Place your finger on the reader' }),
   'polkit keeps checking when PAM sends a message that is not a touch cue'
 )
+// The same flow with a cue_prompt the keywords don't recognize.
+let customPin = { dialogVisible: true, securityKeyConfigured: true, securityKeyCues: ['Tap the token'], supplementary: '' }
+customPin = sync({ ...customPin, submitted: true }, { responseRequired: false, supplementary: '' })
+customPin = sync(customPin, { responseRequired: false, supplementary: 'Tap the token' })
+assert(!customPin.submitted && polkit.securityKeyMode(customPin), 'polkit shows the security key when its cue_prompt follows the PIN')
 JS
