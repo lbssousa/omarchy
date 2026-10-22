@@ -81,6 +81,14 @@ assertEqual(
   JSON.stringify([]),
   'polkit reads no cue_prompt when pam_u2f uses its default cue'
 )
+assertEqual(
+  JSON.stringify(polkit.securityKeyCuesFromPamConfig(`
+auth [success=done default=ignore] pam_u2f.so cue [cue_prompt=Tap\\\\] now] [prompt=Insert it cue_prompt=Nope] # cue_prompt=Comment
+auth sufficient pam_u2f.so cue cue_prompt=Tap\u00a0it
+`)),
+  JSON.stringify(['Tap\\] now', 'Tap\u00a0it']),
+  'polkit splits pam_u2f arguments the way Linux-PAM does'
+)
 
 assert(polkit.messageLooksSecurityKey('Please touch the device.'), 'polkit detects the pam_u2f cue')
 assert(polkit.messageLooksSecurityKey('Please touch the FIDO authenticator.'), 'polkit detects the newer pam_u2f cue')

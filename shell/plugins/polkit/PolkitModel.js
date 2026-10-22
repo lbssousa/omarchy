@@ -52,20 +52,41 @@ function securityKeyConfiguredFromPamConfig(raw) {
   return passiveAuthModules(raw).indexOf("security-key") !== -1
 }
 
+function pamTokens(line) {
+  // Split a pam.d line as Linux-PAM does: "[...]" is one token with only \]
+  // escaped, only space, tab and newline separate, and '#' ends the line.
+  var s = String(line || "").split("#")[0]
+  var out = []
+  var i = 0
+  while (i < s.length) {
+    while (i < s.length && /[ \t\n]/.test(s.charAt(i))) i++
+    if (i >= s.length) break
+    var token = ""
+    if (s.charAt(i) === "[") {
+      for (i++; i < s.length && s.charAt(i) !== "]"; i++) {
+        if (s.charAt(i) === "\\" && s.charAt(i + 1) === "]") i++
+        token += s.charAt(i)
+      }
+      i++
+    } else {
+      for (; i < s.length && !/[ \t\n]/.test(s.charAt(i)); i++) token += s.charAt(i)
+    }
+    out.push(token)
+  }
+  return out
+}
+
 function securityKeyCuesFromPamConfig(raw) {
-  // The cue_prompt= values of pam_u2f, either bare (cue_prompt=Tap) or, when
-  // they hold spaces, in pam.d's brackets ([cue_prompt=Tap the token], where
-  // \] is a literal bracket).
+  // The cue_prompt= arguments of pam_u2f, bare (cue_prompt=Tap) or in
+  // brackets ([cue_prompt=Tap the token]).
   var out = []
   var lines = String(raw || "").split("\n")
   for (var i = 0; i < lines.length; i++) {
-    var line = lines[i].replace(/^\s+|\s+$/g, "")
-    if (!line || line.charAt(0) === "#") continue
-    if (!line.match(/^auth\s+/) || line.indexOf("pam_u2f.so") === -1) continue
-    var re = /\[cue_prompt=((?:\\.|[^\]\\])*)\]|(?:^|\s)cue_prompt=(\S+)/g
-    var match
-    while ((match = re.exec(line)) !== null) {
-      var cue = match[1] !== undefined ? match[1].replace(/\\\]/g, "]") : match[2]
+    var tokens = pamTokens(lines[i])
+    if (tokens[0] !== "auth" || !/(^|\/)pam_u2f\.so$/.test(tokens[2] || "")) continue
+    for (var j = 3; j < tokens.length; j++) {
+      if (tokens[j].indexOf("cue_prompt=") !== 0) continue
+      var cue = tokens[j].slice("cue_prompt=".length)
       if (cue && out.indexOf(cue) === -1) out.push(cue)
     }
   }
